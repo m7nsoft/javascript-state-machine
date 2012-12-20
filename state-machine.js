@@ -33,6 +33,7 @@
       var events    = cfg.events || [];
       var callbacks = cfg.callbacks || {};
       var map       = {};
+      var graph     = cfg.graph; // if cfg.graph is defined, create() adds to it a string member named 'DOTSource' containing the state machine's graph in DOT language
 
       var add = function(e) {
         var from = (e.from instanceof Array) ? e.from : (e.from ? [e.from] : [StateMachine.WILDCARD]); // allow 'wildcard' transition if 'from' is not specified
@@ -64,6 +65,58 @@
       fsm.can     = function(event) { return !this.transition && (map[event].hasOwnProperty(this.current) || map[event].hasOwnProperty(StateMachine.WILDCARD)); }
       fsm.cannot  = function(event) { return !this.can(event); };
       fsm.error   = cfg.error || function(name, from, to, args, error, msg, e) { throw e || msg; }; // default behavior when something unexpected happens is to throw an exception, but caller can override this behavior if desired (see github issue #3 and #17)
+
+      if (graph) {
+        var exportGraphviz = function() {
+          // Collect state names for wildcard expansion
+          var states = [];
+          for (var event in map) {
+            if (map.hasOwnProperty(event)) {
+              var eventMap = map[event];
+              for (var from in eventMap) {
+                if (eventMap.hasOwnProperty(from)) {
+                  states.push(from);
+                  states.push(eventMap[from]);
+                }
+              }
+            }
+          }
+          // remove duplicates and wildcards
+          states = states.filter(function(elem, pos, array) { return elem !== StateMachine.WILDCARD && array.indexOf(elem) === pos; });
+
+          // Generate graphviz source
+          var graph = '';
+          var wline = function(str){
+              graph += str + '\n';
+          };
+
+          wline('digraph fsm {');
+          wline('  rankdir=LR;');
+          wline('  node [shape = circle];');
+
+          for (var event in map) {
+            if (map.hasOwnProperty(event)) {
+              var eventMap = map[event];
+              for (var from in eventMap) {
+                if (eventMap.hasOwnProperty(from)) {
+                  if (from !== StateMachine.WILDCARD) {
+                    wline('  ' + from + ' -> ' + eventMap[from] + ' [ label = "' + event + '" ];');
+                  } else {
+                    states.forEach(function(state) {
+                      wline('  ' + state + ' -> ' + eventMap[from] + ' [ label = "' + event + '" ];');
+                    });
+                  }
+                }
+              }
+            }
+          }
+
+          wline('}');
+          return graph;
+        };
+
+        graph.DOTSource = exportGraphviz();
+      }
 
       if (initial && !initial.defer)
         fsm[initial.event]();
